@@ -515,13 +515,13 @@ class TitleScene extends Phaser.Scene {
 }
 
 // ================================================================
-// VIRTUAL CONTROLS
+// VIRTUAL CONTROLS  (native DOM touch — works on all mobile)
 // ================================================================
 class VirtualControls {
   constructor(scene) {
     this.scene = scene;
     this.state = { left: false, right: false, up: false, down: false, a: false, b: false, turbo: false };
-    this._pointers = {};
+    this._activeTouches = {}; // identifier → classification
     this._build();
   }
 
@@ -529,27 +529,22 @@ class VirtualControls {
     const s = this.scene;
     const sw = GW, sh = GH;
 
-    // Enable up to 4 simultaneous touch points
-    s.input.addPointer(3);
-
     // D-pad position (bottom-left)
     this.dpadX = 70;
     this.dpadY = sh - 82;
-    this.dpadR = 52;
+    this.dpadR = 56;
 
     // Button positions (bottom-right)
-    this.btnAX = sw - 66;  this.btnAY = sh - 110; // Jump / Block
-    this.btnBX = sw - 116; this.btnBY = sh - 62;  // Shoot / Steal
-    this.btnTX = sw - 52;  this.btnTY = sh - 50;  // Turbo
+    this.btnAX = sw - 66;  this.btnAY = sh - 110;
+    this.btnBX = sw - 116; this.btnBY = sh - 62;
+    this.btnTX = sw - 52;  this.btnTY = sh - 50;
 
-    // Visual overlay (separate container at top of display)
+    // Visual overlay
     this.overlay = s.add.container(0, 0).setDepth(100);
 
-    // D-pad graphic
-    const dpad = s.add.image(this.dpadX, this.dpadY, 'dpad').setAlpha(0.75).setScale(1.0);
+    const dpad = s.add.image(this.dpadX, this.dpadY, 'dpad').setAlpha(0.75);
     this.overlay.add(dpad);
 
-    // A button
     const btnA = s.add.image(this.btnAX, this.btnAY, 'btn_a').setAlpha(0.75);
     const lblA = s.add.text(this.btnAX, this.btnAY, 'A\nJUMP', {
       fontFamily: 'monospace', fontSize: '11px', fill: '#00ff44', align: 'center',
@@ -557,7 +552,6 @@ class VirtualControls {
     this.overlay.add([btnA, lblA]);
     this.btnAImg = btnA;
 
-    // B button
     const btnB = s.add.image(this.btnBX, this.btnBY, 'btn_b').setAlpha(0.75);
     const lblB = s.add.text(this.btnBX, this.btnBY, 'B\nSHOOT', {
       fontFamily: 'monospace', fontSize: '10px', fill: '#ff4444', align: 'center',
@@ -565,20 +559,28 @@ class VirtualControls {
     this.overlay.add([btnB, lblB]);
     this.btnBImg = btnB;
 
-    // Turbo
     const btnT = s.add.image(this.btnTX, this.btnTY, 'btn_turbo').setAlpha(0.75);
-    const lblT = s.add.text(this.btnTX, this.btnTY - 0, 'T', {
+    const lblT = s.add.text(this.btnTX, this.btnTY, 'T', {
       fontFamily: 'monospace', fontSize: '10px', fill: '#ff44ff',
     }).setOrigin(0.5).setAlpha(0.9);
     this.overlay.add([btnT, lblT]);
 
-    // Touch events
-    s.input.on('pointerdown',  (p) => this._onDown(p));
-    s.input.on('pointermove',  (p) => this._onMove(p));
-    s.input.on('pointerup',    (p) => this._onUp(p));
-    s.input.on('pointercancel',(p) => this._onUp(p));
+    // ── Native DOM touch events on the canvas ──────────────────
+    // This is the only reliable way to get multi-touch on mobile.
+    const canvas = s.game.canvas;
+    canvas.style.touchAction = 'none'; // prevent scroll/zoom hijack
 
-    // Keyboard fallback
+    this._onTouchStart  = (e) => { e.preventDefault(); this._processTouches(e.touches); };
+    this._onTouchMove   = (e) => { e.preventDefault(); this._processTouches(e.touches); };
+    this._onTouchEnd    = (e) => { e.preventDefault(); this._processTouches(e.touches); };
+    this._onTouchCancel = (e) => { e.preventDefault(); this._processTouches(e.touches); };
+
+    canvas.addEventListener('touchstart',  this._onTouchStart,  { passive: false });
+    canvas.addEventListener('touchmove',   this._onTouchMove,   { passive: false });
+    canvas.addEventListener('touchend',    this._onTouchEnd,    { passive: false });
+    canvas.addEventListener('touchcancel', this._onTouchCancel, { passive: false });
+
+    // Keyboard fallback (desktop)
     this.keys = s.input.keyboard.addKeys({
       left:  Phaser.Input.Keyboard.KeyCodes.LEFT,
       right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
@@ -591,57 +593,43 @@ class VirtualControls {
     });
   }
 
-  _pointerToGameXY(p) {
-    // Phaser 3 already delivers p.x / p.y in game-space coords
-    // (Scale Manager handles the screen→canvas transform internally)
-    return { x: p.x, y: p.y };
+  // Convert a raw clientX/clientY to game coords (0-800, 0-450)
+  _toGame(clientX, clientY) {
+    const rect = this.scene.game.canvas.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) * (GW / rect.width),
+      y: (clientY - rect.top)  * (GH / rect.height),
+    };
   }
 
   _classifyPoint(gx, gy) {
-    // D-pad?
     const dx = gx - this.dpadX, dy = gy - this.dpadY;
-    const dr = Math.sqrt(dx * dx + dy * dy);
-    if (dr < this.dpadR + 20) {
-      return { type: 'dpad', dx, dy };
-    }
-    // A button?
-    if (Math.hypot(gx - this.btnAX, gy - this.btnAY) < 48) return { type: 'a' };
-    // B button?
-    if (Math.hypot(gx - this.btnBX, gy - this.btnBY) < 42) return { type: 'b' };
-    // Turbo?
-    if (Math.hypot(gx - this.btnTX, gy - this.btnTY) < 36) return { type: 'turbo' };
+    if (Math.hypot(dx, dy) < this.dpadR + 20) return { type: 'dpad', dx, dy };
+    if (Math.hypot(gx - this.btnAX, gy - this.btnAY) < 52) return { type: 'a' };
+    if (Math.hypot(gx - this.btnBX, gy - this.btnBY) < 46) return { type: 'b' };
+    if (Math.hypot(gx - this.btnTX, gy - this.btnTY) < 38) return { type: 'turbo' };
     return null;
   }
 
-  _onDown(p) {
-    const { x, y } = this._pointerToGameXY(p);
-    this._pointers[p.id] = { x, y, classification: this._classifyPoint(x, y) };
-    this._updateState();
-  }
-
-  _onMove(p) {
-    const { x, y } = this._pointerToGameXY(p);
-    if (this._pointers[p.id]) {
-      this._pointers[p.id] = { x, y, classification: this._classifyPoint(x, y) };
-      this._updateState();
+  _processTouches(touches) {
+    this._activeTouches = {};
+    for (let i = 0; i < touches.length; i++) {
+      const t = touches[i];
+      const { x, y } = this._toGame(t.clientX, t.clientY);
+      this._activeTouches[t.identifier] = this._classifyPoint(x, y);
     }
-  }
-
-  _onUp(p) {
-    delete this._pointers[p.id];
     this._updateState();
   }
 
   _updateState() {
     let left = false, right = false, up = false, down = false, a = false, b = false, turbo = false;
-    for (const ptr of Object.values(this._pointers)) {
-      const c = ptr.classification;
+    for (const c of Object.values(this._activeTouches)) {
       if (!c) continue;
       if (c.type === 'dpad') {
-        if (c.dx < -14) left  = true;
-        if (c.dx >  14) right = true;
-        if (c.dy < -14) up    = true;
-        if (c.dy >  14) down  = true;
+        if (c.dx < -12) left  = true;
+        if (c.dx >  12) right = true;
+        if (c.dy < -12) up    = true;
+        if (c.dy >  12) down  = true;
       } else if (c.type === 'a')     a     = true;
       else if (c.type === 'b')       b     = true;
       else if (c.type === 'turbo')   turbo = true;
@@ -651,13 +639,11 @@ class VirtualControls {
     this.state.a = a;       this.state.b = b;
     this.state.turbo = turbo;
 
-    // Button glow feedback
     this.btnAImg.setAlpha(a ? 1.0 : 0.75);
     this.btnBImg.setAlpha(b ? 1.0 : 0.75);
   }
 
   get() {
-    // Merge keyboard + touch
     const k = this.keys;
     return {
       left:  this.state.left  || k.left.isDown,
@@ -671,6 +657,11 @@ class VirtualControls {
   }
 
   destroy() {
+    const canvas = this.scene.game.canvas;
+    canvas.removeEventListener('touchstart',  this._onTouchStart);
+    canvas.removeEventListener('touchmove',   this._onTouchMove);
+    canvas.removeEventListener('touchend',    this._onTouchEnd);
+    canvas.removeEventListener('touchcancel', this._onTouchCancel);
     this.overlay.destroy();
   }
 }
