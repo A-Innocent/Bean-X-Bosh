@@ -529,6 +529,9 @@ class VirtualControls {
     const s = this.scene;
     const sw = GW, sh = GH;
 
+    // Enable up to 4 simultaneous touch points
+    s.input.addPointer(3);
+
     // D-pad position (bottom-left)
     this.dpadX = 70;
     this.dpadY = sh - 82;
@@ -589,29 +592,24 @@ class VirtualControls {
   }
 
   _pointerToGameXY(p) {
-    // Convert screen coords to game coords using camera (scale manager)
-    const bounds = this.scene.scale.canvasBounds;
-    const scaleX  = GW / bounds.width;
-    const scaleY  = GH / bounds.height;
-    return {
-      x: (p.x - bounds.left) * scaleX,
-      y: (p.y - bounds.top)  * scaleY,
-    };
+    // Phaser 3 already delivers p.x / p.y in game-space coords
+    // (Scale Manager handles the screen→canvas transform internally)
+    return { x: p.x, y: p.y };
   }
 
   _classifyPoint(gx, gy) {
     // D-pad?
     const dx = gx - this.dpadX, dy = gy - this.dpadY;
     const dr = Math.sqrt(dx * dx + dy * dy);
-    if (dr < this.dpadR + 10) {
+    if (dr < this.dpadR + 20) {
       return { type: 'dpad', dx, dy };
     }
     // A button?
-    if (Math.hypot(gx - this.btnAX, gy - this.btnAY) < 36) return { type: 'a' };
+    if (Math.hypot(gx - this.btnAX, gy - this.btnAY) < 48) return { type: 'a' };
     // B button?
-    if (Math.hypot(gx - this.btnBX, gy - this.btnBY) < 30) return { type: 'b' };
+    if (Math.hypot(gx - this.btnBX, gy - this.btnBY) < 42) return { type: 'b' };
     // Turbo?
-    if (Math.hypot(gx - this.btnTX, gy - this.btnTY) < 28) return { type: 'turbo' };
+    if (Math.hypot(gx - this.btnTX, gy - this.btnTY) < 36) return { type: 'turbo' };
     return null;
   }
 
