@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Bean x Bosh (static dev server)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/serve/build/main.js", ".", "-l", "3000", "--no-clipboard"],
+      "port": 3000
+    }
+  ]
+}

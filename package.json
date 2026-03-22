@@ -1,0 +1,18 @@
+{
+  "name": "bean-x-bosh",
+  "version": "1.0.0",
+  "description": "Bean x Bosh – Road to the 2026 RBA Finals. NBA Jam style hoops built with Phaser 3.",
+  "scripts": {
+    "start": "npx serve . -l 3000",
+    "deploy": "gh-pages -d . -m 'Deploy Bean x Bosh'"
+  },
+  "devDependencies": {
+    "gh-pages": "^6.0.0",
+    "serve": "^14.2.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/A-Innocent/Bean-X-Bosh.git"
+  },
+  "homepage": "https://a-innocent.github.io/Bean-X-Bosh/"
+}
